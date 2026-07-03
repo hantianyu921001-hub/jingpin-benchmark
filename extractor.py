@@ -219,7 +219,7 @@ def extract_from_image(image_path: str) -> dict:
     return _parse_response(content)
 
 
-def extract_from_images(image_paths: list[str], merge: bool = True) -> dict:
+def extract_from_images(image_paths: list, merge: bool = True) -> dict:
     """从多张图片提取并合并结果。
 
     用于参数配置分多页截图的情况（如基础参数页 + 智能驾驶页 + 座舱页）。
@@ -317,7 +317,7 @@ def _merge_extractions(results: list[dict]) -> dict:
 
 # ── 结果校验 ─────────────────────────────────────────────────────────
 
-def validate_extraction(data: dict) -> list[str]:
+def validate_extraction(data: dict) -> list:
     """校验提取结果，返回问题列表。"""
     issues = []
 

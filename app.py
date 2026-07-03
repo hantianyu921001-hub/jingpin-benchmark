@@ -931,7 +931,7 @@ def api_local_model(model_id):
 @app.route("/api/sync-to-lark/<model_id>", methods=["POST"])
 def api_sync_to_lark(model_id):
     """将本地车型的 field_overrides 同步到飞书 Base。"""
-    import subprocess, sys
+    import subprocess
     result = subprocess.run(
         [sys.executable, str(Path(__file__).parent / "sync_to_lark.py"), model_id],
         capture_output=True, text=True, timeout=120,
@@ -939,6 +939,112 @@ def api_sync_to_lark(model_id):
     if result.returncode != 0:
         return jsonify({"ok": False, "error": result.stderr.strip() or result.stdout.strip()}), 500
     return jsonify({"ok": True, "output": result.stdout.strip()})
+
+
+# ── 爬取接口 ────────────────────────────────────────────────────────────
+
+@app.route("/api/scrape-car", methods=["POST"])
+def api_scrape_car():
+    """爬取汽车参数页并提取结构化数据。
+
+    POST body:
+        url: 目标网页 URL（汽车之家/懂车帝/鸿蒙智行/理想）
+        save_as_local: 是否自动保存为本地车型（默认 false）
+        model_id: 保存时的 model_id（可选，默认自动生成）
+    """
+    data = request.get_json(force=True) or {}
+    url = data.get("url", "").strip()
+
+    import re
+    if not url or not re.match(r"^https?://", url):
+        return jsonify({"ok": False, "error": "缺少有效的 url 参数"}), 400
+
+    save_as_local = data.get("save_as_local", False)
+    model_id = data.get("model_id", "")
+
+    import tempfile, os, traceback
+    try:
+        # Step 1: 截图
+        from scraper import capture_screenshot as _capture
+        fd, screenshot_path = tempfile.mkstemp(suffix=".png", prefix="scrape_")
+        os.close(fd)
+
+        cap_path = _capture(url, output_path=screenshot_path)
+        if not cap_path or not os.path.exists(cap_path):
+            return jsonify({"ok": False, "error": "截图失败"}), 500
+
+        # Step 2: AI 提取
+        from extractor import extract_from_image, validate_extraction
+        result = extract_from_image(cap_path)
+
+        # 清理截图
+        try:
+            os.unlink(cap_path)
+        except Exception:
+            pass
+
+        issues = validate_extraction(result)
+        if not result.get("versions"):
+            return jsonify({
+                "ok": False,
+                "error": "未能提取到版本/配置数据",
+                "warnings": issues,
+                "raw": result,
+            }), 422
+
+        # Step 3: 生成本地 model_id → 统一前缀
+        brand = (result.get("brand") or "").strip()
+        model_name = (result.get("model_name") or "").strip()
+        gen = (result.get("generation") or "").strip()
+
+        if not model_id:
+            # 生成稳定 ID: local_{brand}_{model_name}_{generation}
+            parts = [brand, model_name, gen] if gen else [brand, model_name]
+            slug = "_".join(re.sub(r"[^\w一-鿿]", "_", p) for p in parts if p)
+            model_id = f"local_{slug}" if slug else f"local_car_{int(time.time())}"
+
+        # 组装完整 model_data
+        model_data = {
+            "id": model_id,
+            "name": f"{brand} {model_name}",
+            "model_name": f"{brand} {model_name}",
+            "brand": brand,
+            "model_type": result.get("model_type", ""),
+            "status": "正式上市",
+            "generation": gen,
+            "price_range": result.get("price_range", ""),
+            "sort_code": "",
+            "versions": result.get("versions", []),
+            "dims": result.get("dims", {}),
+        }
+
+        # 补版本 id
+        for i, v in enumerate(model_data["versions"]):
+            if not v.get("id"):
+                v["id"] = f"{model_id}_v{i+1}"
+
+        # Step 4: 保存
+        if save_as_local:
+            db.save_local_model(model_id, model_data)
+            return jsonify({
+                "ok": True,
+                "model_id": model_id,
+                "saved": True,
+                "warnings": issues,
+                "data": model_data,
+            })
+
+        return jsonify({
+            "ok": True,
+            "model_id": model_id,
+            "saved": False,
+            "warnings": issues,
+            "data": model_data,
+        })
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 # ── 主入口 ────────────────────────────────────────────────────────────────

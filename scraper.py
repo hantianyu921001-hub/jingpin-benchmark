@@ -8,7 +8,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from urllib.parse import urlparse
+from typing import List, Optional
 
 # 延迟导入 Playwright，仅在需要时加载
 _playwright = None
@@ -78,7 +78,7 @@ def _get_site_config(url: str) -> dict:
 
 def capture_screenshot(
     url: str,
-    output_path: str | None = None,
+    output_path: Optional[str] = None,
     full_page: bool = False,
     viewport_width: int = 1440,
     viewport_height: int = 900,
@@ -161,10 +161,10 @@ def capture_screenshot(
 
 def capture_multiple_screenshots(
     url: str,
-    output_dir: str | None = None,
+    output_dir: Optional[str] = None,
     max_height_per_shot: int = 5000,
     viewport_width: int = 1440,
-) -> list[str]:
+) -> List[str]:
     """分页截取长页面，用于参数配置很多的情况。
 
     Args:
