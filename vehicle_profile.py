@@ -67,7 +67,7 @@ DIMENSION_DEFS = [
     },
     {
         "key": "seat",
-        "title": "座椅&内饰",
+        "title": "座椅 & 内饰",
         "table": "seat",
         "fields": [
             "座椅布局", "一排座椅", "二排座椅", "三排座椅",
@@ -352,8 +352,9 @@ _PROFILE_CSS = """
 body{font-family:"PingFang SC","Microsoft YaHei",sans-serif;background:#F0F0F0;color:#333;min-height:100vh}
 header{background:#FFF;border-bottom:1px solid #E0E0E0;padding:14px 32px;display:flex;align-items:center;gap:24px;position:sticky;top:0;z-index:100;box-shadow:0 1px 4px rgba(0,0,0,.06)}
 header h1{font-size:17px;font-weight:700;color:#222;white-space:nowrap}
-#modelSelect{font-size:14px;padding:7px 12px;border:1px solid #D0D0D0;border-radius:8px;background:#F9F9F9;min-width:260px;cursor:pointer;font-family:inherit}
-#modelSelect:focus{outline:none;border-color:#888}
+#brandSelect,#modelSelect{font-size:14px;padding:7px 12px;border:1px solid #D0D0D0;border-radius:8px;background:#F9F9F9;cursor:pointer;font-family:inherit}
+#brandSelect{{min-width:120px}}#modelSelect{{min-width:200px}}
+#brandSelect:focus,#modelSelect:focus{{outline:none;border-color:#888}}
 .header-count{font-size:13px;color:#999;margin-left:auto}
 .main{max-width:1200px;margin:0 auto;padding:28px 24px 60px}
 .model-header{background:#FFF;border-radius:12px;padding:28px 32px;margin-bottom:24px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
@@ -643,6 +644,7 @@ def render_profile_fragment(models_data):
     dim_defs_json = json.dumps(effective_defs, ensure_ascii=False)
 
     html = f"""<div class="profile-toolbar">
+  <select id="brandSelect"></select>
   <select id="modelSelect"></select>
   <span class="header-count" id="modelCount"></span>
 </div>
@@ -652,20 +654,45 @@ var PROFILE_DATA = {data_json};
 var PROFILE_DIM_DEFS = {dim_defs_json};
 {_PROFILE_JS}
 (function(){{
-  var select=document.getElementById("modelSelect")
-  var currentBrand=""
-  for(var i=0;i<PROFILE_DATA.length;i++){{var m=PROFILE_DATA[i]
-    if(m.brand!==currentBrand){{if(currentBrand){{var opt=document.createElement("option");opt.disabled=true;opt.textContent="─ ─ ─";select.appendChild(opt)}}
-      currentBrand=m.brand
-      var opt=document.createElement("option");opt.disabled=true;opt.textContent="▸ "+m.brand;opt.style.fontWeight=600;opt.style.color="#888";select.appendChild(opt)}}
-    var opt=document.createElement("option");opt.value=i;opt.textContent=m.name;select.appendChild(opt)}}
+  var brandSel=document.getElementById("brandSelect")
+  var modelSel=document.getElementById("modelSelect")
+  // 品牌→车型索引映射
+  var brandList=[]
+  var modelsByBrand={{}}
+  PROFILE_DATA.forEach(function(m,i){{
+    if(!modelsByBrand[m.brand]){{brandList.push(m.brand);modelsByBrand[m.brand]=[]}}
+    modelsByBrand[m.brand].push({{idx:i,name:m.name,id:m.id}})
+  }})
+  // 填充品牌下拉
+  brandList.forEach(function(b){{
+    var opt=document.createElement("option");opt.value=b;opt.textContent=b+" ("+modelsByBrand[b].length+")"
+    brandSel.appendChild(opt)
+  }})
+  // 品牌切换时刷新车型下拉
+  function fillModels(brand){{
+    modelSel.innerHTML=""
+    var list=modelsByBrand[brand]||[]
+    list.forEach(function(m){{
+      var opt=document.createElement("option");opt.value=m.idx;opt.textContent=m.name
+      modelSel.appendChild(opt)
+    }})
+  }}
+  brandSel.addEventListener("change",function(){{
+    fillModels(this.value)
+    renderProfile(PROFILE_DATA[parseInt(modelSel.value)])
+  }})
+  modelSel.addEventListener("change",function(){{
+    renderProfile(PROFILE_DATA[parseInt(this.value)])
+  }})
   document.getElementById("modelCount").textContent="共 "+PROFILE_DATA.length+" 款车型"
-  select.addEventListener("change",function(){{renderProfile(PROFILE_DATA[parseInt(this.value)])}})
   var _hashModelId=(function(){{var m=(location.hash||"").match(/^#profile\/(.+)$/);return m?decodeURIComponent(m[1]):null}})()
   var _initIdx=0
-  if(_hashModelId){{for(var _i=0;_i<PROFILE_DATA.length;_i++){{if(PROFILE_DATA[_i].id===_hashModelId){{_initIdx=_i;break}}}}}}
-  select.value=_initIdx
-  renderProfile(PROFILE_DATA[_initIdx])
+  var _initBrand=brandList[0]
+  if(_hashModelId){{for(var _i=0;_i<PROFILE_DATA.length;_i++){{if(PROFILE_DATA[_i].id===_hashModelId){{_initIdx=_i;_initBrand=PROFILE_DATA[_i].brand;break}}}}}}
+  brandSel.value=_initBrand
+  fillModels(_initBrand)
+  if(_initIdx) modelSel.value=_initIdx
+  renderProfile(PROFILE_DATA[parseInt(modelSel.value)])
 }})()
 </script>"""
 
