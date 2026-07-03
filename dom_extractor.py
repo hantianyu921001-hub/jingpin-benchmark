@@ -232,14 +232,96 @@ def detect_site(url: str) -> Optional[str]:
         return "autohome"
     if "dongchedi.com" in url:
         return "dongchedi"
+    if "yiche.com" in url or "bitauto.com" in url:
+        return "yiche"
     return None
+
+
+# ── 易车网提取 ────────────────────────────────────────────────────────
+
+
+def extract_yiche(url: str) -> dict:
+    """从易车网页面提取配置数据。
+
+    策略：
+    1. 从 URL 解析 series spell → 搜索 API 验证
+    2. Playwright 加载配置页 → 提取表格
+    3. 解析 spec 信息
+    """
+    # 从 URL 提取 series spell 和中文名
+    m = re.search(r"car\.yiche\.com/([a-z0-9]+)", url)
+    spell = m.group(1) if m else ""
+
+    # 尝试从 URL 路径提取中文名（如果有）
+    # e.g., /zeekrex1h/peizhi/ or /jike_9x/peizhi/
+    chinese_hint = ""
+    m2 = re.search(r"/([a-z]+)_?(\d+[a-z]?)", spell)
+    if m2:
+        chinese_hint = m2.group(2)  # "9x" from "zeekrex1h"
+
+    # 搜索 API 获取 series ID
+    series_info = {}
+    search_keywords = [spell, chinese_hint] if chinese_hint else [spell]
+    for keyword in search_keywords:
+        if not keyword:
+            continue
+        try:
+            param = json.dumps({"keyword": keyword})
+            api_url = (
+                f"https://mapi.yiche.com/web_app/api/v1/search/suggest"
+                f"?t={int(time.time() * 1000)}&sign=&devid=&uid=&ver=guanwangPC&cid=508"
+                f"&param={urllib.parse.quote(param)}"
+            )
+            data = _fetch_json(api_url, timeout=10)
+            items = (data.get("data") or [])
+            for item in items:
+                if item.get("type") == 0:  # series type
+                    show = item.get("showName", "")
+                    series_info = {
+                        "series_id": item.get("id"),
+                        "name": item.get("name", ""),
+                        "show_name": show,
+                        "brand": show.split(" ")[0] if " " in show else "",
+                    }
+                    break
+            if series_info:
+                print(f"  → 搜索命中: {series_info.get('show_name', keyword)}", file=sys.stderr)
+                break
+        except Exception as e:
+            continue
+
+    # Playwright 加载配置页（易车用 domcontentloaded 避免超时）
+    config = {"versions": [], "dims": {}}
+    try:
+        config = _extract_html_fallback(url, wait_strategy="domcontentloaded")
+    except Exception as e:
+        print(f"  ⚠ Playwright提取失败: {e}", file=sys.stderr)
+
+    # 组装结果
+    model_name = series_info.get("name") or spell or re.search(r"/([^/]+)/peizhi", url)
+    model_name = model_name.group(1) if hasattr(model_name, "group") else str(model_name)
+
+    return {
+        "brand": series_info.get("brand", ""),
+        "model_name": model_name,
+        "series_id": str(series_info.get("series_id", "")),
+        "versions": config.get("versions", []),
+        "dims": config.get("dims", {}),
+        "_source": "yiche",
+        "_note": "易车配置页需浏览器渲染，数据可能不完整。建议用汽车之家URL获取完整配置。",
+    }
 
 
 # ── HTML 提取（非 autohome 站点兜底）──────────────────────────────────
 
 
-def _extract_html_fallback(url: str) -> dict:
-    """Playwright 渲染 + HTML 解析兜底。"""
+def _extract_html_fallback(url: str, wait_strategy: str = "networkidle") -> dict:
+    """Playwright 渲染 + HTML 解析兜底。
+
+    Args:
+        url: 目标 URL
+        wait_strategy: 等待策略 — 'networkidle' (默认) 或 'domcontentloaded' (易车等SPA)
+    """
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:
@@ -250,8 +332,8 @@ def _extract_html_fallback(url: str) -> dict:
         )
         page = ctx.new_page()
         try:
-            page.goto(url, wait_until="networkidle", timeout=20000)
-            page.wait_for_timeout(2000)
+            page.goto(url, wait_until=wait_strategy, timeout=20000)
+            page.wait_for_timeout(3000)
             html = page.content()
         finally:
             ctx.close()
@@ -338,6 +420,10 @@ def extract_from_url(url: str) -> dict:
             return extract_autohome(spec_id)
         else:
             return {"_error": "无法从URL解析autohome spec_id"}
+
+    if site == "yiche":
+        print(f"  → 站点: 易车网", file=sys.stderr)
+        return extract_yiche(url)
 
     # 其他站点：Playwright HTML 提取
     print(f"  → 站点: {site or '未知'}", file=sys.stderr)
