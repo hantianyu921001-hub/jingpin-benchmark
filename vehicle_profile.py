@@ -549,7 +549,7 @@ function renderProfile(m){if(!m)return
   // 侧栏
   var sidebar='<div class="profile-sidebar">'
   for(var i=0;i<PROFILE_DIM_DEFS.length;i++){
-    sidebar+='<a class="sidebar-pill" href="#dim-'+escapeHtml(PROFILE_DIM_DEFS[i][0])+'" onclick="scrollToDim(\''+escapeHtml(PROFILE_DIM_DEFS[i][0])+'\',event)">'+escapeHtml(PROFILE_DIM_DEFS[i][1])+'</a>'
+    sidebar+='<a class="sidebar-pill" href="#dim-'+escapeHtml(PROFILE_DIM_DEFS[i][0])+'" data-dim-key="'+escapeHtml(PROFILE_DIM_DEFS[i][0])+'">'+escapeHtml(PROFILE_DIM_DEFS[i][1])+'</a>'
   }
   sidebar+='</div>'
   // 主体
@@ -587,12 +587,26 @@ function scrollToDim(dimKey, e){
 }
 
 function _initScrollSpy(){
+  var sidebar=document.querySelector(".profile-sidebar")
   var pills=document.querySelectorAll(".sidebar-pill")
+  // 点击事件委托
+  if(sidebar){
+    sidebar.addEventListener("click",function(e){
+      var pill=e.target.closest(".sidebar-pill")
+      if(!pill) return
+      e.preventDefault()
+      var dimKey=pill.getAttribute("data-dim-key")
+      if(dimKey){
+        var el=document.getElementById("dim-"+dimKey)
+        if(el) el.scrollIntoView({behavior:"smooth",block:"start"})
+      }
+    })
+  }
   var sections=[]
   pills.forEach(function(p){
-    var id=p.getAttribute("href")
-    if(id&&id.startsWith("#")){
-      var el=document.getElementById(id.slice(1))
+    var dimKey=p.getAttribute("data-dim-key")
+    if(dimKey){
+      var el=document.getElementById("dim-"+dimKey)
       if(el) sections.push({el:el, pill:p})
     }
   })
