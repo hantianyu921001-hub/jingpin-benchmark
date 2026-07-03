@@ -396,6 +396,15 @@ header h1{font-size:17px;font-weight:700;color:#222;white-space:nowrap}
 .kv-v{font-size:13px;color:#333;word-break:break-all;padding:3px 0}
 .empty-state{text-align:center;padding:60px 20px;color:#999}
 .empty-state p{font-size:15px;margin-top:8px}
+/* ── 配置分类侧栏 ── */
+.profile-layout{display:flex;gap:20px;align-items:flex-start}
+.profile-sidebar{position:sticky;top:80px;width:120px;flex-shrink:0;display:flex;flex-direction:column;gap:6px;z-index:10}
+.sidebar-pill{display:block;padding:8px 10px;font-size:12px;color:#666;background:#FFF;border-radius:8px;cursor:pointer;text-decoration:none;border:1px solid #EEE;transition:all .15s;user-select:none;white-space:nowrap;text-align:center}
+.sidebar-pill:hover{border-color:#1A3C6E;color:#1A3C6E;background:#F0F4FF}
+.sidebar-pill.active{background:#1A3C6E;color:#FFF;border-color:#1A3C6E;font-weight:600}
+.sidebar-pill .pill-dot{display:inline-block;width:5px;height:5px;border-radius:50%;background:#CCC;margin-right:4px;vertical-align:middle}
+.sidebar-pill.active .pill-dot{background:#FFF}
+.profile-content{flex:1;min-width:0}
 """
 
 _PROFILE_JS = """
@@ -506,7 +515,7 @@ function buildVersionTable(versions){
 }
 
 function buildDimSection(dimKey,title,fields,versions,dimByVersion){
-  var h='<div class="dim-section"><div class="dim-section-title">'+escapeHtml(title)+'</div>'
+  var h='<div class="dim-section" id="dim-'+escapeHtml(dimKey)+'"><div class="dim-section-title">'+escapeHtml(title)+'</div>'
   if(!fields||!fields.length){
     h+='<div class="dim-kv-wrap" style="color:#BBB;font-size:12px;padding:12px 20px">暂无配置项</div></div>'
     return h
@@ -537,29 +546,68 @@ function buildDimSection(dimKey,title,fields,versions,dimByVersion){
 
 function renderProfile(m){if(!m)return
   var main=document.getElementById("profile-main")
-  var h='<div class="model-header">'
-  h+='<h2>'+escapeHtml(m.name)+'</h2>'
-  h+='<div class="model-tags">'
-  h+='<span class="tag brand">'+escapeHtml(m.brand)+'</span>'
-  if(m.model_type)h+='<span class="tag">'+escapeHtml(m.model_type)+'</span>'
+  // 侧栏
+  var sidebar='<div class="profile-sidebar">'
+  for(var i=0;i<PROFILE_DIM_DEFS.length;i++){
+    sidebar+='<a class="sidebar-pill" href="#dim-'+escapeHtml(PROFILE_DIM_DEFS[i][0])+'" onclick="scrollToDim(\''+escapeHtml(PROFILE_DIM_DEFS[i][0])+'\',event)">'+escapeHtml(PROFILE_DIM_DEFS[i][1])+'</a>'
+  }
+  sidebar+='</div>'
+  // 主体
+  var body='<div class="model-header">'
+  body+='<h2>'+escapeHtml(m.name)+'</h2>'
+  body+='<div class="model-tags">'
+  body+='<span class="tag brand">'+escapeHtml(m.brand)+'</span>'
+  if(m.model_type)body+='<span class="tag">'+escapeHtml(m.model_type)+'</span>'
   var statusClass=(m.status==="正式上市"||m.status==="已上市")?"launched":"presale"
-  h+='<span class="tag '+statusClass+'">'+escapeHtml(m.status)+'</span>'
-  h+='</div>'
-  h+='<div class="model-meta">'
-  if(m.generation)h+='<span><span class="label">年款</span>'+escapeHtml(m.generation)+'</span>'
-  if(m.price_range)h+='<span><span class="label">价格区间</span>'+escapeHtml(m.price_range)+'</span>'
-  h+='<span><span class="label">版本</span>'+m.versions.length+' 个</span>'
-  h+='</div></div>'
-  h+=buildVersionTable(m.versions)
+  body+='<span class="tag '+statusClass+'">'+escapeHtml(m.status)+'</span>'
+  body+='</div>'
+  body+='<div class="model-meta">'
+  if(m.generation)body+='<span><span class="label">年款</span>'+escapeHtml(m.generation)+'</span>'
+  if(m.price_range)body+='<span><span class="label">价格区间</span>'+escapeHtml(m.price_range)+'</span>'
+  body+='<span><span class="label">版本</span>'+m.versions.length+' 个</span>'
+  body+='</div></div>'
+  body+=buildVersionTable(m.versions)
   var dimData=m.dims||{}
   for(var i=0;i<PROFILE_DIM_DEFS.length;i++){
     var d=PROFILE_DIM_DEFS[i]
-    h+=buildDimSection(d[0],d[1],d[2],m.versions,(dimData[d[0]]||{}))
+    body+=buildDimSection(d[0],d[1],d[2],m.versions,(dimData[d[0]]||{}))
   }
-  main.innerHTML=h
+  main.innerHTML='<div class="profile-layout">'+sidebar+'<div class="profile-content">'+body+'</div></div>'
   _initEditing(m.id)
   _loadOverrides(m.id)
+  // 滚动监听：更新侧栏激活项
+  _initScrollSpy()
   if(history.replaceState) history.replaceState(null,"","#profile/"+encodeURIComponent(m.id))
+}
+
+function scrollToDim(dimKey, e){
+  e&&e.preventDefault()
+  var el=document.getElementById("dim-"+dimKey)
+  if(el) el.scrollIntoView({behavior:"smooth",block:"start"})
+}
+
+function _initScrollSpy(){
+  var pills=document.querySelectorAll(".sidebar-pill")
+  var sections=[]
+  pills.forEach(function(p){
+    var id=p.getAttribute("href")
+    if(id&&id.startsWith("#")){
+      var el=document.getElementById(id.slice(1))
+      if(el) sections.push({el:el, pill:p})
+    }
+  })
+  if(!sections.length) return
+  function update(){
+    var scrollY=window.scrollY+100
+    var active=null
+    for(var i=0;i<sections.length;i++){
+      if(sections[i].el.offsetTop<=scrollY) active=sections[i]
+    }
+    pills.forEach(function(p){p.classList.remove("active")})
+    if(active) active.pill.classList.add("active")
+  }
+  window.addEventListener("scroll",update,{passive:true})
+  update()
 }
 """
 
