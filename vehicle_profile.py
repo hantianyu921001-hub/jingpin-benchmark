@@ -18,6 +18,13 @@ LAUNCHED = {"正式上市", "已上市"}
 EXCLUDED_STATUS = {"版本取消", "退市", "停售"}
 BASE_TOKEN = "E571b0YbQa2MxysVn4RctXcDn7d"
 
+# 品牌排序（与型谱图保持一致）
+BRAND_ORDER = [
+    "理想", "问界", "智界", "尚界", "启境", "华境",
+    "小米", "蔚来", "乐道", "小鹏", "极氪", "智己",
+    "岚图", "零跑", "腾势", "方程豹", "比亚迪", "魏牌", "上汽大众",
+]
+
 # ── 所有维度的表 ID ──────────────────────────────────────────────────
 TABLES = {
     "models": "tbl92hQB5ngDEvRH",
@@ -327,7 +334,14 @@ def build_model_data(raw):
     except Exception:
         pass
 
-    output.sort(key=lambda x: (x["brand"] or "", x["sort_code"] or "", x["name"] or ""))
+    # 品牌排序与型谱图一致：BRAND_ORDER → sort_code → name
+    def _brand_rank(b: str) -> int:
+        try:
+            return BRAND_ORDER.index(b)
+        except ValueError:
+            return len(BRAND_ORDER)
+
+    output.sort(key=lambda x: (_brand_rank(x["brand"] or ""), x["sort_code"] or "", x["name"] or ""))
     return output
 
 
