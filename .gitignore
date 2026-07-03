@@ -1,0 +1,8 @@
+*.db
+*.db-journal
+*.pyc
+__pycache__/
+.env
+*.log
+/tmp/
+.Trash/
