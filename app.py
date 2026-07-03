@@ -945,10 +945,10 @@ def api_sync_to_lark(model_id):
 
 @app.route("/api/scrape-car", methods=["POST"])
 def api_scrape_car():
-    """爬取汽车参数页并提取结构化数据。
+    """爬取汽车参数页并提取结构化数据（DOM 直接提取，无需视觉 API）。
 
     POST body:
-        url: 目标网页 URL（汽车之家/懂车帝/鸿蒙智行/理想）
+        url: 目标网页 URL
         save_as_local: 是否自动保存为本地车型（默认 false）
         model_id: 保存时的 model_id（可选，默认自动生成）
     """
@@ -962,83 +962,58 @@ def api_scrape_car():
     save_as_local = data.get("save_as_local", False)
     model_id = data.get("model_id", "")
 
-    import tempfile, os, traceback
+    import traceback
     try:
-        # Step 1: 截图
-        from scraper import capture_screenshot as _capture
-        fd, screenshot_path = tempfile.mkstemp(suffix=".png", prefix="scrape_")
-        os.close(fd)
+        from dom_extractor import extract_from_url, save_as_local_model
 
-        cap_path = _capture(url, output_path=screenshot_path)
-        if not cap_path or not os.path.exists(cap_path):
-            return jsonify({"ok": False, "error": "截图失败"}), 500
+        result = extract_from_url(url)
 
-        # Step 2: AI 提取
-        from extractor import extract_from_image, validate_extraction
-        result = extract_from_image(cap_path)
-
-        # 清理截图
-        try:
-            os.unlink(cap_path)
-        except Exception:
-            pass
-
-        issues = validate_extraction(result)
         if not result.get("versions"):
             return jsonify({
                 "ok": False,
-                "error": "未能提取到版本/配置数据",
-                "warnings": issues,
-                "raw": result,
+                "error": "未能从页面提取到版本/配置数据。请确认 URL 是参数配置页。",
+                "meta": result.get("_meta", {}),
+                "warning": result.get("_warning", ""),
             }), 422
 
-        # Step 3: 生成本地 model_id → 统一前缀
         brand = (result.get("brand") or "").strip()
         model_name = (result.get("model_name") or "").strip()
-        gen = (result.get("generation") or "").strip()
 
         if not model_id:
-            # 生成稳定 ID: local_{brand}_{model_name}_{generation}
-            parts = [brand, model_name, gen] if gen else [brand, model_name]
-            slug = "_".join(re.sub(r"[^\w一-鿿]", "_", p) for p in parts if p)
-            model_id = f"local_{slug}" if slug else f"local_car_{int(time.time())}"
+            slug = re.sub(r"[^\w一-鿿]", "_", f"{brand}_{model_name}")
+            model_id = f"local_{slug}" if slug else f"local_{int(time.time())}"
 
-        # 组装完整 model_data
+        # 计算价格区间
+        prices = [v.get("price") for v in result["versions"] if isinstance(v.get("price"), (int, float))]
+        price_range = ""
+        if prices:
+            lo, hi = min(prices), max(prices)
+            price_range = f"{lo}-{hi}万" if lo != hi else f"{lo}万"
+
         model_data = {
             "id": model_id,
-            "name": f"{brand} {model_name}",
-            "model_name": f"{brand} {model_name}",
+            "name": f"{brand} {model_name}".strip(),
+            "model_name": model_name or f"{brand} {model_name}".strip(),
             "brand": brand,
             "model_type": result.get("model_type", ""),
             "status": "正式上市",
-            "generation": gen,
-            "price_range": result.get("price_range", ""),
+            "generation": result.get("generation", ""),
+            "price_range": price_range,
             "sort_code": "",
-            "versions": result.get("versions", []),
-            "dims": result.get("dims", {}),
+            "versions": result["versions"],
+            "dims": result["dims"],
         }
 
-        # 补版本 id
-        for i, v in enumerate(model_data["versions"]):
-            if not v.get("id"):
-                v["id"] = f"{model_id}_v{i+1}"
-
-        # Step 4: 保存
         if save_as_local:
-            db.save_local_model(model_id, model_data)
+            save_as_local_model(result, model_id)
             return jsonify({
-                "ok": True,
-                "model_id": model_id,
-                "saved": True,
-                "warnings": issues,
-                "data": model_data,
+                "ok": True, "model_id": model_id, "saved": True,
+                "versions": len(result["versions"]),
+                "dim_count": len(result["dims"]),
             })
 
         return jsonify({
-            "ok": True,
-            "model_id": model_id,
-            "saved": False,
-            "warnings": issues,
+            "ok": True, "model_id": model_id, "saved": False,
             "data": model_data,
         })
 
