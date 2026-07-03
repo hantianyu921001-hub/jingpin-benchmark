@@ -30,13 +30,12 @@ TABLE_IDS = {
     "safety":  "tblTjuDT2NHD3xGR",
 }
 
-# dim_key → 飞书表名映射
+# dim_key → 飞书表名映射（comfort 多表合并，仅预览用）
 DIM_TO_TABLE = {
     "design_ext": "design",
     "size":       "size",
-    "space":      "space",
+    "comfort":    "space",   # space + nvh 合并，primary=space
     "seat":       "seat",
-    "nvh":        "nvh",
     "light":      "light",
     "ad":         "ad",
     "cockpit":    "cockpit",

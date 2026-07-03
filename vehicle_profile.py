@@ -45,50 +45,30 @@ TABLES = {
 # 每个维度：显示标题、数据表、要展示的字段列表
 DIMENSION_DEFS = [
     {
-        "key": "design_ext",
-        "title": "设计",
-        "table": "design",
-        "fields": ["外观特征", "车漆颜色", "内饰颜色", "内饰材质", "轮毂/轮胎"],
-    },
-    {
         "key": "size",
         "title": "尺寸",
         "table": "size",
         "fields": ["长(mm)", "宽(mm)", "高(mm)", "轴距(mm)", "风阻系数Cd", "轮胎规格"],
     },
     {
-        "key": "space",
-        "title": "空间",
-        "table": "space",
+        "key": "ev",
+        "title": "三电",
+        "table": "ev",
         "fields": [
-            "一排空间", "二排空间", "三排空间", "乘坐空间(mm)",
-            "车内面积(m)", "前备箱容积(L)", "前备箱开关方式", "后备箱空间",
+            "能源形式", "电池容量(kWh)", "CLTC纯电续航(km)", "WLTC纯电续航(km)",
+            "综合续航(km)", "最大功率(kW)", "最大扭矩(Nm)",
+            "零百加速(s)", "平台架构", "驱动形式", "电池体系", "动力系统",
         ],
     },
     {
-        "key": "seat",
-        "title": "座椅 & 内饰",
-        "table": "seat",
+        "key": "chassis",
+        "title": "底盘",
+        "table": "chassis",
         "fields": [
-            "座椅布局", "一排座椅", "二排座椅", "三排座椅",
-            "一排其它配置", "二排其它配置", "三排其它配置",
-            "二排中岛", "座椅卖点", "方向盘",
-            "遮阳帘/玻璃", "阅读灯/氛围灯",
-        ],
-    },
-    {
-        "key": "nvh",
-        "title": "NVH & 空调",
-        "table": "nvh",
-        "fields": ["NVH", "空调", "冰箱", "健康座舱"],
-    },
-    {
-        "key": "light",
-        "title": "灯光 & 车门",
-        "table": "light",
-        "fields": [
-            "头灯", "尾灯", "ADB/DLP大灯", "迎宾光毯",
-            "车门", "电吸/防夹", "电动开关",
+            "前悬架", "后悬架", "空气悬架", "CDC", "主动悬架/主动稳定杆",
+            "后轮转向", "后轮转向角度()", "转向", "线控转向", "制动",
+            "百零制动距离(m)", "转弯半径", "涉水深度(mm)",
+            "底盘材质", "拖挂资质", "特殊通过能力",
         ],
     },
     {
@@ -112,25 +92,41 @@ DIMENSION_DEFS = [
         ],
     },
     {
-        "key": "chassis",
-        "title": "底盘",
-        "table": "chassis",
+        "key": "seat",
+        "title": "座椅 & 内饰",
+        "table": "seat",
         "fields": [
-            "前悬架", "后悬架", "空气悬架", "CDC", "主动悬架/主动稳定杆",
-            "后轮转向", "后轮转向角度()", "转向", "线控转向", "制动",
-            "百零制动距离(m)", "转弯半径", "涉水深度(mm)",
-            "底盘材质", "拖挂资质", "特殊通过能力",
+            "座椅布局", "一排座椅", "二排座椅", "三排座椅",
+            "一排其它配置", "二排其它配置", "三排其它配置",
+            "二排中岛", "座椅卖点", "方向盘",
+            "遮阳帘/玻璃", "阅读灯/氛围灯",
         ],
     },
     {
-        "key": "ev",
-        "title": "三电",
-        "table": "ev",
+        "key": "comfort",
+        "title": "空间 & 舒适",
+        "table": None,  # 从 space + nvh 两张表合并
         "fields": [
-            "能源形式", "电池容量(kWh)", "CLTC纯电续航(km)", "WLTC纯电续航(km)",
-            "综合续航(km)", "最大功率(kW)", "最大扭矩(Nm)",
-            "零百加速(s)", "平台架构", "驱动形式", "电池体系", "动力系统",
+            "一排空间", "二排空间", "三排空间", "乘坐空间(mm)",
+            "车内面积(m)", "前备箱容积(L)", "前备箱开关方式", "后备箱空间",
+            "NVH", "空调", "冰箱", "健康座舱",
         ],
+        "source_tables": ["space", "nvh"],
+    },
+    {
+        "key": "light",
+        "title": "灯光 & 车门",
+        "table": "light",
+        "fields": [
+            "头灯", "尾灯", "ADB/DLP大灯", "迎宾光毯",
+            "车门", "电吸/防夹", "电动开关",
+        ],
+    },
+    {
+        "key": "design_ext",
+        "title": "颜色 & 轮毂",
+        "table": "design",
+        "fields": ["外观特征", "车漆颜色", "内饰颜色", "内饰材质", "轮毂/轮胎"],
     },
     {
         "key": "safety",
@@ -188,16 +184,17 @@ def build_model_data(raw):
             if rid in models_by_id:
                 versions_by_model[rid].append(p)
 
-    # 按 model_record_id 索引维度表
+    # 按 model_record_id 索引维度表（按表名索引，支持多表合并维度）
     dim_data = {}
-    for dim in DIMENSION_DEFS:
-        table = dim["table"]
+    for table_key, table_id in TABLES.items():
+        if table_key in ("models", "prices"):
+            continue
         by_model = defaultdict(list)
-        for rec in raw.get(table, []):
+        for rec in raw.get(table_key, []):
             for rid in link_ids(rec.get("关联车型")):
                 if rid in models_by_id:
                     by_model[rid].append(rec)
-        dim_data[dim["key"]] = by_model
+        dim_data[table_key] = by_model
 
     output = []
     for model_id, m in models_by_id.items():
@@ -252,19 +249,24 @@ def build_model_data(raw):
         for dim_def in DIMENSION_DEFS:
             dk = dim_def["key"]
             fields_to_use = _dim_cfg.get(dk, dim_def["fields"])
-            records = dim_data[dk].get(model_id, [])
+            # 支持多表合并（如 comfort = space + nvh）
+            source_tables = dim_def.get("source_tables", [dim_def["table"]]) if dim_def.get("table") is None else [dim_def["table"]]
             by_version = {}
-            for rec in records:
-                for vid in link_ids(rec.get("适用版本")):
-                    if vid not in model_version_ids:
-                        continue
-                    existing = by_version.get(vid, {})
-                    for f in fields_to_use:
-                        s = fmt_value(rec.get(f))
-                        if s:
-                            prev = existing.get(f)
-                            existing[f] = s if not prev else (prev if prev == s else f"{prev} / {s}")
-                    by_version[vid] = existing
+            for src_tbl in source_tables:
+                if not src_tbl:
+                    continue
+                records = dim_data[src_tbl].get(model_id, [])
+                for rec in records:
+                    for vid in link_ids(rec.get("适用版本")):
+                        if vid not in model_version_ids:
+                            continue
+                        existing = by_version.get(vid, {})
+                        for f in fields_to_use:
+                            s = fmt_value(rec.get(f))
+                            if s:
+                                prev = existing.get(f)
+                                existing[f] = s if not prev else (prev if prev == s else f"{prev} / {s}")
+                        by_version[vid] = existing
             dims[dk] = by_version
 
         # 合并 field_overrides 到版本数据和维度数据
