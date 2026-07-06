@@ -304,6 +304,7 @@ def build_model_data(raw):
             "sort_code": fmt_value(m.get("车型排序码")),
             "versions": version_rows,
             "dims": dims,
+            "scraped_fields": {},  # 前端运行时填充
         })
 
     # ── 合并本地车型（不在飞书中的车型）─────────────────────────────────
@@ -391,6 +392,8 @@ header h1{font-size:17px;font-weight:700;color:#222;white-space:nowrap}
 .dim-compare-table th.field-col,.dim-compare-table td.field-col{position:sticky;left:0;z-index:2;background:#F0F3FA;min-width:110px;color:#555;font-weight:500;white-space:nowrap}
 .dim-compare-table thead th.field-col{background:#EAF0FA;z-index:3}
 .diff-val{background:#FFF9C4 !important}
+.scraped-val{background:#E3F2FD !important}
+.diff-val.scraped-val{background:#FFF9C4 !important}
 .save-error{background:#FFEBEE !important}
 [data-edit]{cursor:pointer;white-space:pre-wrap}
 [data-edit]:hover:not(.editing){background:rgba(26,60,110,.05) !important}
@@ -535,10 +538,12 @@ function buildDimSection(dimKey,title,fields,versions,dimByVersion){
     var vals=versions.map(function(v){return(dimByVersion[v.id]||{})[f]||""})
     var allSame=vals.every(function(v){return v===vals[0]})
     var baseVal=baseKv[f]||""
+    var isScraped=PROFILE_SCRAPED[dimKey]&&PROFILE_SCRAPED[dimKey].indexOf(f)>=0
     h+='<tr><td class="field-col">'+escapeHtml(f)+'</td>'
     vals.forEach(function(v,i){
       var isDiff=!allSame&&v!==baseVal&&versions[i].id!==baseId
-      h+='<td'+(isDiff?' class="diff-val"':'')+' data-edit="dim" data-vid="'+escapeHtml(versions[i].id||"")+'" data-dim="'+escapeHtml(dimKey)+'" data-field="'+escapeHtml(f)+'">'+escapeHtml(v)+'</td>'
+      var cls=[isDiff?"diff-val":"",isScraped?"scraped-val":""].filter(Boolean).join(" ")
+      h+='<td'+(cls?' class="'+cls+'"':'')+' data-edit="dim" data-vid="'+escapeHtml(versions[i].id||"")+'" data-dim="'+escapeHtml(dimKey)+'" data-field="'+escapeHtml(f)+'">'+escapeHtml(v)+'</td>'
     })
     h+='</tr>'
   })
@@ -645,6 +650,12 @@ def render_profile_fragment(models_data):
     ]
     dim_defs_json = json.dumps(effective_defs, ensure_ascii=False)
 
+    # 读取爬取字段清单
+    scraped_json = "{}"
+    sf_path = Path(__file__).parent / "scraped_fields.json"
+    if sf_path.exists():
+        scraped_json = sf_path.read_text(encoding="utf-8")
+
     html = f"""<div class="profile-toolbar">
   <select id="brandSelect"></select>
   <select id="modelSelect"></select>
@@ -652,6 +663,7 @@ def render_profile_fragment(models_data):
 </div>
 <div id="profile-main"></div>
 <script>
+var PROFILE_SCRAPED = {scraped_json};
 var PROFILE_DATA = {data_json};
 var PROFILE_DIM_DEFS = {dim_defs_json};
 {_PROFILE_JS}

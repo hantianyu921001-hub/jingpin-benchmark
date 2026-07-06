@@ -195,22 +195,30 @@ def extract_autohome(spec_id: str) -> dict:
 
 def _get_param_value(param: dict) -> str:
     """从 paramconflist 的一项中提取实际值。"""
-    # 值可能在 value, sublist, 或其他字段中
-    if "value" in param and param["value"]:
+    # 1. 优先 value 字段
+    if param.get("value") and str(param["value"]).strip():
         return str(param["value"]).strip()
-    if "sublist" in param and param["sublist"]:
+    # 2. sublist 数组
+    if param.get("sublist"):
         parts = []
         for sub in param["sublist"]:
             if isinstance(sub, dict):
-                v = sub.get("value") or sub.get("name") or sub.get("subvalue") or ""
+                v = sub.get("value") or sub.get("subvalue") or sub.get("name") or ""
                 if v:
                     parts.append(str(v).strip())
             elif isinstance(sub, str):
                 parts.append(sub.strip())
         return " / ".join(parts) if parts else ""
-    # 可能 value 在其他字段
+    # 3. itemname 即为值（autohome 常见模式）
+    val = param.get("itemname", "")
+    if val:
+        val = str(val).strip()
+        # 过滤掉明显是标签而非值的项（包含"万元""万"的价格项通常走value字段）
+        if val not in ("●", "○", "—", "-", "/", "无", "暂无", "标配", "选配"):
+            return val
+    # 4. 其他可能的字段
     for k in ("configvalue", "paramvalue", "itemvalue"):
-        if k in param and param[k]:
+        if param.get(k) and str(param[k]).strip():
             return str(param[k]).strip()
     return ""
 
