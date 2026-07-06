@@ -257,7 +257,11 @@ def build_model_data(raw):
                     continue
                 records = dim_data[src_tbl].get(model_id, [])
                 for rec in records:
-                    for vid in link_ids(rec.get("适用版本")):
+                    # 适用版本 → 关联具体版本；为空则应用到所有版本
+                    target_vids = link_ids(rec.get("适用版本"))
+                    if not target_vids:
+                        target_vids = list(model_version_ids) if model_version_ids else []
+                    for vid in target_vids:
                         if vid not in model_version_ids:
                             continue
                         existing = by_version.get(vid, {})
