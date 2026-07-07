@@ -57,14 +57,28 @@ MERGE_FIELDS = {
 
 def _get_param_value(param: dict) -> str:
     """从 autohome paramconflist 项提取值。"""
-    if param.get("value") and str(param["value"]).strip():
-        return str(param["value"]).strip()
+    # 1. 直接 value
+    v = param.get("value")
+    if v and str(v).strip() and str(v).strip() not in ("●", "○", "—", "-"):
+        return str(v).strip()
+
+    # 2. itemname（简单值直接放在这里）
+    v = param.get("itemname")
+    if v and str(v).strip() and str(v).strip() not in ("●", "○", "—", "-"):
+        return str(v).strip()
+
+    # 3. sublist — 取 name 字段（真实值），过滤 value=● 的符号
     if param.get("sublist"):
         parts = []
         for sub in param["sublist"]:
             if isinstance(sub, dict):
-                v = sub.get("value") or sub.get("subvalue") or sub.get("name") or ""
-                if v: parts.append(str(v).strip())
+                name = str(sub.get("name", "")).strip()
+                val = str(sub.get("value", "")).strip()
+                # 优先 name（真实文字），value 往往是 ●/○
+                if name and name not in ("●", "○", "—", "-"):
+                    parts.append(name)
+                elif val and val not in ("●", "○", "—", "-"):
+                    parts.append(val)
             elif isinstance(sub, str):
                 parts.append(sub.strip())
         return " / ".join(parts) if parts else ""
